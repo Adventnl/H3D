@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} (${{ matrix.build_type }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        build_type: [Release]
+        include:
+          - os: ubuntu-latest
+            build_type: Debug
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DFORGE_BUILD_TESTS=ON
+          -DFORGE_BUILD_BENCHMARKS=ON
+          -DFORGE_BUILD_TOOLS=ON
+          -DFORGE_ENABLE_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config ${{ matrix.build_type }} --output-on-failure
+
+      - name: Smoke-test executables (POSIX)
+        if: runner.os != 'Windows'
+        run: |
+          find build -name forge_cli -type f -exec {} --version \;
+          find build -name forge_cli -type f -exec {} doctor \;
+          find build -name forge_desktop -type f -exec {} --frames 2 \;
+
+      - name: Smoke-test executables (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $cli = Get-ChildItem -Recurse build -Filter forge_cli.exe | Select-Object -First 1
+          & $cli.FullName --version
+          & $cli.FullName doctor
+          $desktop = Get-ChildItem -Recurse build -Filter forge_desktop.exe | Select-Object -First 1
+          & $desktop.FullName --frames 2

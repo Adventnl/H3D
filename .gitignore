@@ -1,0 +1,20 @@
+# Build output
+build/
+out/
+cmake-build-*/
+
+# IDE / editor state
+.vs/
+.idea/
+.vscode/
+*.user
+CMakeUserPresets.json
+
+# Generated artifacts
+compile_commands.json
+*.log
+forge_trace.json
+
+# OS noise
+.DS_Store
+Thumbs.db
