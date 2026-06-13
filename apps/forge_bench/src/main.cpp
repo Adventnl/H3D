@@ -47,10 +47,15 @@ int main(int argc, char** argv)
                 min_seconds = 0.2;
             }
         }
+        else if (argument == "--quick")
+        {
+            // Fast smoke pass for CI.
+            min_seconds = 0.01;
+        }
         else if (argument == "--help" || argument == "-h")
         {
-            std::printf(
-                "usage: forge_bench [--filter <substring>] [--min-time <seconds>]\n");
+            std::printf("usage: forge_bench [--filter <substring>] "
+                        "[--min-time <seconds>] [--quick]\n");
             return 0;
         }
         else

@@ -29,7 +29,8 @@ FORGE_TEST_CASE("memory.linear_allocator_respects_alignment")
 {
     LinearAllocator allocator(1024);
 
-    allocator.allocate(3, 1); // deliberately misalign the offset
+    [[maybe_unused]] void* misalign =
+        allocator.allocate(3, 1); // deliberately misalign the offset
     void* aligned = allocator.allocate(16, 64);
     FORGE_REQUIRE(aligned != nullptr);
     FORGE_CHECK_EQ(reinterpret_cast<std::uintptr_t>(aligned) % 64,

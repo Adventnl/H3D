@@ -19,11 +19,14 @@ endif()
 # ---------------------------------------------------------------------------
 # Options
 # ---------------------------------------------------------------------------
+option(FORGE_BUILD_APP "Build the forge_app and forge_ui modules and the desktop shell" ON)
 option(FORGE_BUILD_TESTS "Build the Forge3D unit tests" ON)
 option(FORGE_BUILD_BENCHMARKS "Build the Forge3D benchmarks" ON)
 option(FORGE_BUILD_TOOLS "Build the Forge3D developer tools" ON)
+option(FORGE_BUILD_DOCS "Add a docs target when a documentation generator is available" OFF)
 option(FORGE_ENABLE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 option(FORGE_ENABLE_SANITIZERS "Enable address/undefined sanitizers (non-MSVC)" OFF)
+option(FORGE_ENABLE_COVERAGE "Enable coverage instrumentation (GCC/Clang)" OFF)
 option(FORGE_ENABLE_PROFILING "Enable the built-in profiler instrumentation" ON)
 option(FORGE_ENABLE_TRACING "Enable Chrome-trace capture in the desktop shell" OFF)
 
@@ -31,6 +34,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(ForgeCompilerOptions)
 include(ForgeWarnings)
 include(ForgeSanitizers)
+include(ForgeCoverage)
 include(ForgeTesting)
 include(ForgeInstall)
 
@@ -58,13 +62,22 @@ message(STATUS "Forge3D: version ${PROJECT_VERSION}, commit ${FORGE_GIT_COMMIT}"
 # ---------------------------------------------------------------------------
 # Modules
 # ---------------------------------------------------------------------------
+# Dependency direction: foundation -> app -> ui -> apps. Nothing depends on a
+# layer above it.
 add_subdirectory(foundation)
+
+if(FORGE_BUILD_APP)
+    add_subdirectory(app)
+    add_subdirectory(ui)
+endif()
 
 if(FORGE_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
 
-add_subdirectory(apps/forge_desktop)
+if(FORGE_BUILD_APP)
+    add_subdirectory(apps/forge_desktop)
+endif()
 add_subdirectory(apps/forge_cli)
 add_subdirectory(apps/forge_bench)
 
@@ -75,4 +88,8 @@ endif()
 
 if(FORGE_BUILD_TOOLS)
     add_subdirectory(tools)
+endif()
+
+if(FORGE_BUILD_DOCS)
+    add_subdirectory(docs)
 endif()

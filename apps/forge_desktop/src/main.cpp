@@ -1,106 +1,48 @@
-// Forge3D desktop shell — Phase 1.
+// Forge3D desktop shell — Phase 2.
 //
-// There is no window or UI yet (Phase 2 builds the window manager). This
-// entry point exercises the real startup/shutdown path every later phase
-// will extend: logging, build info, the job system, a frame loop with
-// profiling, and clean teardown.
+// This drives the real Phase 2 application runtime: it builds an Application
+// (events, input, operators, commands, keymap, preferences, a headless window),
+// attaches the ui workspace/editor registries, then runs a frame loop. There is
+// still no GPU or real viewport rendering — editors are logical placeholders.
 //
-//   forge_desktop [--frames N] [--trace <file>] [--log-file <file>]
+//   forge_desktop [--frames N] [--headless] [--windowed]
+//                 [--trace <file>] [--log-file <file>]
 
-#include <atomic>
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <format>
 #include <string>
 #include <string_view>
-#include <thread>
 
+#include "forge/app/application.hpp"
 #include "forge/foundation/build_info.hpp"
 #include "forge/foundation/log.hpp"
 #include "forge/foundation/scope_exit.hpp"
-#include "forge/foundation/time.hpp"
+#include "forge/foundation/version.hpp"
 #include "forge/profiling/profiler.hpp"
 #include "forge/profiling/profiler_scope.hpp"
 #include "forge/profiling/trace_writer.hpp"
-#include "forge/threading/job_system.hpp"
+#include "forge/ui/editor.hpp"
+#include "forge/ui/editor_registry.hpp"
+#include "forge/ui/workspace_registry.hpp"
 
 namespace
 {
 
 constexpr std::string_view kLogCategory = "desktop";
 
-struct DesktopOptions
+struct Options
 {
     int frames = 5;
+    bool headless = true;
     std::string trace_path;
     std::string log_file_path;
-#if FORGE_TRACING_ENABLED
-    bool tracing = true;
-#else
     bool tracing = false;
-#endif
 };
 
-/// Minimal runtime shell: the Phase 2 application object will grow from
-/// this initialize / frame loop / shutdown skeleton.
-class Runtime
+Options parse_arguments(int argc, char** argv)
 {
-public:
-    bool initialize()
-    {
-        FORGE_LOG_INFO(kLogCategory, "initializing runtime");
-        forge::JobSystem::initialize();
-        FORGE_LOG_INFO(kLogCategory,
-                       std::format("job system online with {} workers",
-                                   forge::JobSystem::worker_count()));
-        return true;
-    }
-
-    void run_frames(int frame_count)
-    {
-        forge::FrameTimer frame_timer;
-
-        for (int frame = 0; frame < frame_count; ++frame)
-        {
-            FORGE_PROFILE_SCOPE("frame");
-
-            // Placeholder workload standing in for scene evaluation: a
-            // parallel reduction large enough to touch every worker.
-            std::atomic<long long> accumulator{0};
-            {
-                FORGE_PROFILE_SCOPE("frame.parallel_work");
-                forge::JobSystem::parallel_for(0, 100'000, [&accumulator](std::size_t index) {
-                    accumulator.fetch_add(static_cast<long long>(index % 7),
-                                          std::memory_order_relaxed);
-                });
-            }
-
-            // Simulate a small amount of fixed frame cost.
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-            const forge::Duration delta = frame_timer.tick();
-            FORGE_LOG_DEBUG(kLogCategory,
-                            std::format("frame {} took {:.3f} ms (checksum {})", frame,
-                                        delta.seconds() * 1e3, accumulator.load()));
-        }
-
-        FORGE_LOG_INFO(kLogCategory,
-                       std::format("ran {} frames, average fps estimate {:.1f}",
-                                   frame_timer.frame_count(),
-                                   frame_timer.frames_per_second()));
-    }
-
-    void shutdown()
-    {
-        FORGE_LOG_INFO(kLogCategory, "shutting down runtime");
-        forge::JobSystem::shutdown();
-    }
-};
-
-DesktopOptions parse_arguments(int argc, char** argv)
-{
-    DesktopOptions options;
+    Options options;
     for (int index = 1; index < argc; ++index)
     {
         const std::string_view argument = argv[index];
@@ -111,6 +53,14 @@ DesktopOptions parse_arguments(int argc, char** argv)
             {
                 options.frames = 0;
             }
+        }
+        else if (argument == "--headless")
+        {
+            options.headless = true;
+        }
+        else if (argument == "--windowed")
+        {
+            options.headless = false;
         }
         else if (argument == "--trace" && index + 1 < argc)
         {
@@ -123,8 +73,8 @@ DesktopOptions parse_arguments(int argc, char** argv)
         }
         else if (argument == "--help" || argument == "-h")
         {
-            std::printf("usage: forge_desktop [--frames N] [--trace <file>] "
-                        "[--log-file <file>]\n");
+            std::printf("usage: forge_desktop [--frames N] [--headless] [--windowed] "
+                        "[--trace <file>] [--log-file <file>]\n");
             std::exit(0);
         }
     }
@@ -139,27 +89,75 @@ DesktopOptions parse_arguments(int argc, char** argv)
 
 int main(int argc, char** argv)
 {
-    const DesktopOptions options = parse_arguments(argc, argv);
+    const Options options = parse_arguments(argc, argv);
 
-    if (!options.log_file_path.empty() &&
-        !forge::default_logger().open_file(options.log_file_path))
+    forge::ApplicationConfig config;
+    config.application_name = "Forge3D";
+    config.headless = options.headless;
+    config.enable_tracing = options.tracing;
+    config.log_file_path = options.log_file_path;
+
+    forge::Application app(config);
+    if (auto ready = app.initialize(); !ready)
     {
-        std::fprintf(stderr, "warning: could not open log file '%s'\n",
-                     options.log_file_path.c_str());
-    }
-
-    FORGE_LOG_INFO(kLogCategory, "Forge3D desktop shell starting");
-    FORGE_LOG_INFO(kLogCategory, forge::build_info_string());
-
-    Runtime runtime;
-    if (!runtime.initialize())
-    {
-        FORGE_LOG_FATAL(kLogCategory, "runtime initialization failed");
+        std::fprintf(stderr, "fatal: %s\n", ready.error().to_string().c_str());
         return 1;
     }
-    FORGE_SCOPE_EXIT(runtime.shutdown());
+    FORGE_SCOPE_EXIT(app.shutdown());
 
-    runtime.run_frames(options.frames);
+    // Attach the ui layer: workspaces (also the WorkspaceService) and editors.
+    forge::ui::WorkspaceRegistry workspaces;
+    forge::ui::register_default_workspaces(workspaces);
+    app.set_workspace_service(&workspaces);
+
+    forge::ui::EditorRegistry editors;
+    forge::ui::register_default_editors(editors);
+
+    const forge::ui::Workspace* active = workspaces.active();
+    std::printf("%s\n", forge::build_info_string().c_str());
+    std::printf("\nForge3D Phase 2 application shell\n");
+    std::printf("  active workspace : %s\n",
+                active != nullptr ? active->display_name().c_str() : "(none)");
+    std::printf("  workspaces       : %zu\n", workspaces.size());
+    std::printf("  registered editors: %zu\n", editors.size());
+    std::printf("  registered operators: %zu\n", app.operators().size());
+    std::printf("  keymap bindings  : %zu\n", app.keymap().size());
+    std::printf("  window backend   : %s (%s)\n", app.windows().backend().name().data(),
+                options.headless ? "headless" : "windowed");
+
+    // Prove the editor framework: instantiate the editor for each area of the
+    // active workspace and report its placeholder status.
+    if (active != nullptr)
+    {
+        forge::ui::EditorContext editor_context;
+        editor_context.app = &app.context();
+        for (const forge::ui::Area* area : active->screen().areas())
+        {
+            auto editor = editors.create(area->editor_type());
+            if (editor)
+            {
+                editor->on_open(editor_context);
+                FORGE_LOG_INFO(kLogCategory,
+                               std::format("area {} -> {}", area->id(),
+                                           editor->status_text()));
+                editor->on_close(editor_context);
+            }
+        }
+    }
+
+    // Frame loop driven through the Application pipeline.
+    int frames_run = 0;
+    for (int i = 0; i < options.frames; ++i)
+    {
+        FORGE_PROFILE_SCOPE("frame");
+        const bool keep_going = app.run_frame();
+        ++frames_run;
+        if (!keep_going)
+        {
+            break;
+        }
+    }
+    std::printf("  frames run       : %d\n", frames_run);
 
     if (options.tracing)
     {
@@ -180,6 +178,6 @@ int main(int argc, char** argv)
         }
     }
 
-    FORGE_LOG_INFO(kLogCategory, "Forge3D desktop shell exiting cleanly");
+    std::printf("  shutdown         : clean\n");
     return 0;
 }

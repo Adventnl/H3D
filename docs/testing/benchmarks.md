@@ -11,9 +11,14 @@ not a rigorous microbenchmark suite — treat run-to-run noise accordingly.
 ./build/release/apps/forge_bench/forge_bench                # same suites
 ./build/release/apps/forge_bench/forge_bench --filter math.
 ./build/release/apps/forge_bench/forge_bench --min-time 0.5
+./build/release/apps/forge_bench/forge_bench --quick        # fast smoke pass (CI)
 ```
 
 Always benchmark **release** builds; debug numbers are meaningless.
+
+`--quick` lowers the calibration target to ~0.01 s per benchmark so CI can run
+every suite as a crash/registration smoke test in a second or two. The numbers it
+prints are not meaningful measurements — use the default `--min-time` for that.
 
 Output:
 
@@ -60,3 +65,7 @@ library). Benchmarks never fail the build or CI unless they crash.
 - `memory.*` — linear allocator allocate/reset, system allocator alloc/free
 - `threading.*` — thread-pool tiny tasks, submit+future round trip
 - `filesystem.*` — path normalize, join, decompose
+- `app.*` — operator search, keymap lookup (Phase 2)
+- `ui.*` — screen split, workspace creation (Phase 2)
+
+The `app.*`/`ui.*` suites are only built when `FORGE_BUILD_APP=ON` (the default).

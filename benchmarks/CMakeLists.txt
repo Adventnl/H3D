@@ -5,15 +5,25 @@
 # let the linker drop them). apps/forge_bench reuses it for the installable
 # benchmark executable.
 
-add_library(forge_bench_core OBJECT
+set(FORGE_BENCH_SOURCES
     bench_framework.cpp
     bench_math.cpp
     bench_allocator.cpp
     bench_thread_pool.cpp
     bench_path.cpp
 )
+
+# Benchmark the app/ui layers when they are part of this build.
+if(TARGET forge::app AND TARGET forge::ui)
+    list(APPEND FORGE_BENCH_SOURCES bench_app_ui.cpp)
+endif()
+
+add_library(forge_bench_core OBJECT ${FORGE_BENCH_SOURCES})
 target_include_directories(forge_bench_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(forge_bench_core PUBLIC forge::foundation)
+if(TARGET forge::app AND TARGET forge::ui)
+    target_link_libraries(forge_bench_core PUBLIC forge::app forge::ui)
+endif()
 forge_apply_target_defaults(forge_bench_core)
 
 # Developer-facing runner inside the build tree.

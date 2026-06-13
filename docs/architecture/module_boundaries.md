@@ -8,6 +8,8 @@ impossible to fix later.
 
 ```txt
 foundation      the base library (namespace forge)
+app             application runtime, events, operators, commands (namespace forge)
+ui              logical UI/editor framework (namespace forge::ui)
 apps/*          executable entry points
 tests           unit tests
 benchmarks      benchmark suites
@@ -19,10 +21,17 @@ tools/*         developer utilities
 | Module | May depend on | Must not depend on |
 |---|---|---|
 | `foundation` | C++ standard library, OS APIs behind abstraction files | anything else in the repo; any future module |
-| `apps/*` | `foundation` | tests, benchmarks, each other |
-| `tests` | `foundation` (and the internal test framework) | apps, benchmarks |
-| `benchmarks` | `foundation` (and the internal bench framework) | apps, tests |
+| `app` | `foundation` | `ui`, apps, tests, benchmarks, any future scene/gpu/render module |
+| `ui` | `foundation`, `app` | apps, tests, benchmarks, any future scene/gpu/render module |
+| `apps/*` | `foundation`, `app`, `ui` | tests, benchmarks, each other |
+| `tests` | `foundation`, `app`, `ui` (and the internal test framework) | apps, benchmarks |
+| `benchmarks` | `foundation`, `app`, `ui` (and the internal bench framework) | apps, tests |
 | `tools/*` | `foundation` | apps, tests, benchmarks |
+
+The `app` module must not depend on `ui`. The single cross-cutting need —
+workspace and screen operators acting on UI state — is bridged by the abstract
+`forge::WorkspaceService` interface that `app` declares and `ui::WorkspaceRegistry`
+implements, so the dependency arrow stays `ui → app` only.
 
 `foundation` must stay free of any knowledge of scenes, meshes, rendering,
 UI, animation, nodes, assets or scripting. If a future module needs shared

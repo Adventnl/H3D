@@ -26,6 +26,7 @@ jobs:
         run: >
           cmake -S . -B build
           -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DFORGE_BUILD_APP=ON
           -DFORGE_BUILD_TESTS=ON
           -DFORGE_BUILD_BENCHMARKS=ON
           -DFORGE_BUILD_TOOLS=ON
@@ -40,9 +41,19 @@ jobs:
       - name: Smoke-test executables (POSIX)
         if: runner.os != 'Windows'
         run: |
-          find build -name forge_cli -type f -exec {} --version \;
-          find build -name forge_cli -type f -exec {} doctor \;
-          find build -name forge_desktop -type f -exec {} --frames 2 \;
+          cli=$(find build -name forge_cli -type f | head -n 1)
+          desktop=$(find build -name forge_desktop -type f | head -n 1)
+          bench=$(find build -name forge_bench -type f | head -n 1)
+          "$cli" --version
+          "$cli" doctor
+          "$cli" app-info
+          "$cli" list-workspaces
+          "$cli" list-editors
+          "$cli" list-operators
+          "$cli" keymap
+          "$cli" preferences-defaults
+          "$desktop" --frames 2 --headless
+          "$bench" --quick
 
       - name: Smoke-test executables (Windows)
         if: runner.os == 'Windows'
@@ -51,5 +62,13 @@ jobs:
           $cli = Get-ChildItem -Recurse build -Filter forge_cli.exe | Select-Object -First 1
           & $cli.FullName --version
           & $cli.FullName doctor
+          & $cli.FullName app-info
+          & $cli.FullName list-workspaces
+          & $cli.FullName list-editors
+          & $cli.FullName list-operators
+          & $cli.FullName keymap
+          & $cli.FullName preferences-defaults
           $desktop = Get-ChildItem -Recurse build -Filter forge_desktop.exe | Select-Object -First 1
-          & $desktop.FullName --frames 2
+          & $desktop.FullName --frames 2 --headless
+          $bench = Get-ChildItem -Recurse build -Filter forge_bench.exe | Select-Object -First 1
+          & $bench.FullName --quick
